@@ -16,7 +16,7 @@ Initial experiments:
 
 ## Training Stages
 
-### V2
+### Stage 1
 
 Focus:
 
@@ -25,7 +25,7 @@ Focus:
 - feedback generation
 
 
-### V3
+### Stage 2
 
 Focus:
 
