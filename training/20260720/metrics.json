@@ -1,0 +1,12 @@
+{
+  "training_completed": true,
+  "runtime_seconds": 7298,
+  "runtime_hours": 2.03,
+  "global_steps": 261,
+  "epochs_completed": 3,
+  "validation_loss": {
+    "step_100": 0.129901,
+    "step_200": 0.077361
+  },
+  "final_training_loss": 0.3378736035
+}
