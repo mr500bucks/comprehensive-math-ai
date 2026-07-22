@@ -5,4 +5,4 @@ datasets
 accelerate
 bitsandbytes
 sentencepiece
-torchao>=0.16.0
+torchao==0.16.0
