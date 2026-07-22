@@ -6,3 +6,4 @@ accelerate
 bitsandbytes
 sentencepiece
 torchao==0.16.0
+sympy==1.13.1
