@@ -1,0 +1,56 @@
+{
+  "date": "2026-07-24",
+  "base_model": "Qwen/Qwen2.5-Math-7B-Instruct",
+  "dataset_version": "unknown",
+  "prompt_format_version": "progressive_hint_tutor_v2",
+  "training_method": "QLoRA",
+  "trainer": "TRL SFTTrainer",
+  "epochs": 3,
+  "learning_rate": 0.0002,
+  "batch_size": 1,
+  "gradient_accumulation_steps": 8,
+  "gradient_checkpointing": true,
+  "max_seq_length": 2048,
+  "packing": false,
+  "optimizer": "paged_adamw_8bit",
+  "scheduler": "cosine",
+  "warmup_ratio": 0.03,
+  "weight_decay": 0.01,
+  "precision": "fp16",
+  "quantization": {
+    "load_in_4bit": true,
+    "quant_type": "nf4",
+    "compute_dtype": "float16",
+    "double_quant": true
+  },
+  "save_steps": 50,
+  "eval_steps": 100,
+  "lora": {
+    "r": 16,
+    "alpha": 32,
+    "dropout": 0.05,
+    "bias": "none",
+    "target_modules": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj"
+    ]
+  },
+  "dataset_format": {
+    "input": [
+      "problem",
+      "student_solution"
+    ],
+    "output": [
+      "first_incorrect_step",
+      "explanation",
+      "hint"
+    ],
+    "behavior": [
+      "minimal_hint_first",
+      "progressive_disclosure",
+      "confirm_correct_reasoning"
+    ]
+  }
+}
