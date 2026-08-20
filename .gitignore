@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Environments and local configuration
+.venv/
+.env
+.env.*
+!.env.example
+
+# Build and generated outputs
+build/
+dist/
+evaluation/results/
+
+# Model and training artifacts (commit manifests, not weights)
+checkpoints/
+adapters/
+*.bin
+*.ckpt
+*.pt
+*.pth
+*.safetensors
+
+# Raw/private data (commit only redacted fixtures and manifests)
+data/raw/
+data/private/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+

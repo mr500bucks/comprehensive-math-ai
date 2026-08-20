@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements.lock
+      - name: Install locked environment
+        run: |
+          python -m pip install -r requirements.lock
+          python -m pip install --no-deps -e .
+      - name: Lint
+        run: ruff check .
+      - name: Format check
+        run: ruff format --check .
+      - name: Type check
+        run: mypy
+      - name: Test
+        run: pytest
+      - name: Build and smoke-test wheel
+        run: |
+          python -m pip wheel --no-deps --wheel-dir "$RUNNER_TEMP/wheelhouse" .
+          python -m pip install --no-deps --force-reinstall "$RUNNER_TEMP"/wheelhouse/math_feedback_ai-*.whl
+          cd "$RUNNER_TEMP"
+          python -m math_feedback_ai.cli --help >/dev/null
+          python -m math_feedback_ai.cli benchmark >/dev/null
+
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pypa/gh-action-pip-audit@v1.1.0
+        with:
+          inputs: requirements.lock
