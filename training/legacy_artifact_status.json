@@ -2,38 +2,40 @@
   "inventory_version": "1.0",
   "inventoried_on": "2026-08-20",
   "status": "legacy_partially_unreproducible",
+  "fingerprint_algorithm": "sha256",
+  "fingerprint_normalization": "utf-8-lf",
   "available_files": [
     {
       "path": "training/20260720/metrics.json",
-      "sha256": "ae8c10696740151a1f85dd8c19bf19b6e8905d505014081d8a75dc383b6adf61"
+      "sha256": "413dfab95da158ed06894355f6fdc61d5a62ad65607a34a7b879273e6ccb2780"
     },
     {
       "path": "training/20260720/requirements.txt",
-      "sha256": "034742e025e206d0c073c9dbf9b7843f45d31ebe33af94b7cd70ee08568e80c6"
+      "sha256": "998b54f705d4501eec3906a7585a7c31023fc89231bf9c9107ad6b1c3ec313b6"
     },
     {
       "path": "training/20260720/train_config.json",
-      "sha256": "f46560e4d22e61961b5b17f65970e7b7bf7e2b8ae7cabd14b93be7ed06e4ba6c"
+      "sha256": "0dfb9cbe6ef55c1f9a3599344fe8fa452f6baf381eaa1c5dce5b3a5b74c354f3"
     },
     {
       "path": "training/20260720/training_summary.md",
-      "sha256": "9c71a894429ad4f5d1289b3ebe412ca337dfc3a737b7fcb1693716ad2f5b6f78"
+      "sha256": "ecc34e0b0ca6dc0b501a1aa5f4478607fa2a2b77134922f71c7190fee595afbf"
     },
     {
       "path": "training/20260724/metrics.json",
-      "sha256": "e28c8b4015d4561e7b17a8f41dab901d8cf3a2ea1540e1bebf71784929922560"
+      "sha256": "68d94683ed2452c9604e70b489b268a74731de66070c833b2c7b74d2c95c5bed"
     },
     {
       "path": "training/20260724/requirements.txt",
-      "sha256": "22708513df15e4ca269f145e9dba9f8bde35036577679c94dc7d4c82e0fd4536"
+      "sha256": "74ed61036d72bf0ca72d4fd64be7bf3077d71c980e354889b977f6e8a44c8d61"
     },
     {
       "path": "training/20260724/train_config.json",
-      "sha256": "d031c82283ad30eefe6f05292e8500988948e2c7791da09737929c7735cf58a3"
+      "sha256": "6cd05433d5e589e2518dd68a57be76e8c364d45ba100d2236f2959dcf8798e19"
     },
     {
       "path": "training/20260724/training_summary.md",
-      "sha256": "d9f61097366b7ed9a52e68a50247a4731e4a822eeb018629780ca8ad5ca1bf10"
+      "sha256": "9f7e56f023a1fa8574cd0c5bc8b5a683bdc435c9da3343c14f05e6cb0ccaef6a"
     }
   ],
   "missing_artifact_kinds": [
@@ -48,6 +50,7 @@
   ],
   "notes": [
     "No files inside the dated directories were modified during this inventory.",
-    "Hashes describe the current available historical records, not the missing original run artifacts."
+    "Hashes describe the current available historical records, not the missing original run artifacts.",
+    "Text is decoded as UTF-8 and normalized to LF before hashing so fingerprints are checkout-platform independent."
   ]
 }
