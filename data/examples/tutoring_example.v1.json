@@ -1,0 +1,82 @@
+{
+  "schema_version": "1.0",
+  "example_id": "example.synthetic-factorization-1",
+  "provenance": {
+    "source": "synthetic development fixture",
+    "synthetic": true,
+    "license": "CC0-1.0",
+    "notes": "Created to exercise the canonical schema; not a validated benchmark item."
+  },
+  "problem": {
+    "problem_id": "problem.factor-difference-squares",
+    "statement": "Factor x^2 - 1.",
+    "reference_solutions": [
+      {
+        "reference_id": "reference.difference-squares",
+        "text": "Use a^2 - b^2 = (a - b)(a + b) to obtain (x - 1)(x + 1).",
+        "method_label": "difference of squares"
+      }
+    ]
+  },
+  "student_attempt": {
+    "attempt_id": "attempt.synthetic-factorization-1",
+    "problem_id": "problem.factor-difference-squares",
+    "raw_text": "x^2 - 1 = (x - 1)(x + 1)",
+    "steps": [
+      {
+        "step_id": "step.factorization",
+        "position": 0,
+        "text": "x^2 - 1 = (x - 1)(x + 1)",
+        "start_offset": 0,
+        "end_offset": 24,
+        "segmentation_ambiguous": false
+      }
+    ],
+    "attempt_number": 1,
+    "segmentation_ambiguous": false,
+    "parse_strategy": "single_chunk",
+    "parse_notes": []
+  },
+  "gold_diagnosis": {
+    "schema_version": "1.0",
+    "attempt_id": "attempt.synthetic-factorization-1",
+    "overall_status": "fully_correct",
+    "step_assessments": [
+      {
+        "step_id": "step.factorization",
+        "status": "valid",
+        "issue_codes": [],
+        "explanation": "The factorization expands to the original expression.",
+        "evidence": "(x - 1)(x + 1) = x^2 - 1.",
+        "confidence": 1.0
+      }
+    ],
+    "first_issue": null,
+    "completion_gap": null,
+    "reusable_prefix_end_step_id": "step.factorization",
+    "earlier_reasoning_usable": true,
+    "reference_relation": "same_method",
+    "confidence": 1.0,
+    "confidence_reasons": [
+      "Direct expansion verifies the identity."
+    ]
+  },
+  "expected_decision": {
+    "action": "WAIT",
+    "max_reveal_level": 0,
+    "target_step_id": null,
+    "rationale_code": "solution.fully_correct",
+    "rationale": "No mathematical hint is needed.",
+    "full_solution_authorized": false
+  },
+  "ideal_responses": [
+    {
+      "action": "WAIT",
+      "reveal_level": 0,
+      "message": "Your factorization is correct; no hint is needed.",
+      "target_step_id": null,
+      "requires_student_response": false,
+      "safe_fallback_used": false
+    }
+  ]
+}

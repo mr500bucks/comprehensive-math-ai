@@ -1,0 +1,53 @@
+{
+  "inventory_version": "1.0",
+  "inventoried_on": "2026-08-20",
+  "status": "legacy_partially_unreproducible",
+  "available_files": [
+    {
+      "path": "training/20260720/metrics.json",
+      "sha256": "ae8c10696740151a1f85dd8c19bf19b6e8905d505014081d8a75dc383b6adf61"
+    },
+    {
+      "path": "training/20260720/requirements.txt",
+      "sha256": "034742e025e206d0c073c9dbf9b7843f45d31ebe33af94b7cd70ee08568e80c6"
+    },
+    {
+      "path": "training/20260720/train_config.json",
+      "sha256": "f46560e4d22e61961b5b17f65970e7b7bf7e2b8ae7cabd14b93be7ed06e4ba6c"
+    },
+    {
+      "path": "training/20260720/training_summary.md",
+      "sha256": "9c71a894429ad4f5d1289b3ebe412ca337dfc3a737b7fcb1693716ad2f5b6f78"
+    },
+    {
+      "path": "training/20260724/metrics.json",
+      "sha256": "e28c8b4015d4561e7b17a8f41dab901d8cf3a2ea1540e1bebf71784929922560"
+    },
+    {
+      "path": "training/20260724/requirements.txt",
+      "sha256": "22708513df15e4ca269f145e9dba9f8bde35036577679c94dc7d4c82e0fd4536"
+    },
+    {
+      "path": "training/20260724/train_config.json",
+      "sha256": "d031c82283ad30eefe6f05292e8500988948e2c7791da09737929c7735cf58a3"
+    },
+    {
+      "path": "training/20260724/training_summary.md",
+      "sha256": "d9f61097366b7ed9a52e68a50247a4731e4a822eeb018629780ca8ad5ca1bf10"
+    }
+  ],
+  "missing_artifact_kinds": [
+    "dataset",
+    "train_validation_splits",
+    "prompt_templates",
+    "formatting_code",
+    "training_code",
+    "model_adapter_or_checkpoint",
+    "trainer_logs",
+    "generated_evaluation_outputs"
+  ],
+  "notes": [
+    "No files inside the dated directories were modified during this inventory.",
+    "Hashes describe the current available historical records, not the missing original run artifacts."
+  ]
+}
