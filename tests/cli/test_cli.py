@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, cast
@@ -7,6 +8,9 @@ from typing import Any, cast
 import pytest
 
 from math_feedback_ai.cli import main
+from math_feedback_ai.model.fake import FakeModelClient
+from math_feedback_ai.model.llama_cpp import DEFAULT_QWEN_FILENAME, LlamaCppConfig
+from math_feedback_ai.model.openai_responses import OpenAIResponsesConfig
 from math_feedback_ai.parsing.steps import parse_student_attempt
 
 PROBLEM_ID = "cli-problem"
@@ -103,6 +107,11 @@ def test_tutor_help_documents_scripted_and_policy_controls(
     assert exc_info.value.code == 0
     assert "--diagnosis-json" in output
     assert "--hint-text" in output
+    assert "--provider" in output
+    assert "--model" in output
+    assert "--model-path" in output
+    assert "--llama-context-window" in output
+    assert "--timeout-seconds" in output
     assert "--mode" in output
     assert "--current-reveal-level" in output
     assert "--authorize-full-solution" in output
@@ -298,6 +307,185 @@ def test_hint_script_without_diagnosis_is_rejected(
     assert exit_code == 2
     assert captured.out == ""
     assert "--hint-text requires --diagnosis-json" in captured.err
+
+
+def test_openai_provider_requires_environment_key_without_exposing_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+
+    exit_code = main(
+        [
+            "tutor",
+            "--problem",
+            PROBLEM,
+            "--solution",
+            SOLUTION,
+            "--provider",
+            "openai",
+            "--model",
+            "gpt-test",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert captured.out == ""
+    assert "OPENAI_API_KEY is required" in captured.err
+
+
+def test_openai_provider_is_wired_into_complete_tutor_flow(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    created_configs: list[OpenAIResponsesConfig] = []
+    fake = FakeModelClient(
+        structured_responses=[_diagnosis_payload()],
+        text_responses=["What relationship should remain unchanged in the second step?"],
+    )
+
+    def build_fake(config: OpenAIResponsesConfig) -> FakeModelClient:
+        created_configs.append(config)
+        return fake
+
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key-never-sent")
+    monkeypatch.setattr("math_feedback_ai.cli.OpenAIResponsesClient", build_fake)
+
+    exit_code = main(
+        [
+            "tutor",
+            "--problem",
+            PROBLEM,
+            "--solution",
+            SOLUTION,
+            "--attempt-id",
+            "a1",
+            "--provider",
+            "openai",
+            "--model",
+            "gpt-test",
+            "--provider-max-retries",
+            "0",
+            "--timeout-seconds",
+            "6",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0, captured.err
+    payload = json.loads(captured.out)
+    assert payload["execution_mode"] == "live_openai"
+    assert payload["diagnosis"]["overall_status"] == "incorrect"
+    assert payload["model_calls"] == {"structured": 1, "text": 1}
+    assert created_configs[0].model == "gpt-test"
+    assert created_configs[0].max_retries == 0
+
+
+def test_openai_provider_cannot_be_mixed_with_scripted_outputs(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "test-key-never-sent")
+
+    exit_code = main(
+        [
+            "tutor",
+            "--problem",
+            PROBLEM,
+            "--solution",
+            SOLUTION,
+            "--provider",
+            "openai",
+            "--model",
+            "gpt-test",
+            "--diagnosis-json",
+            json.dumps(_diagnosis_payload()),
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert "scripted model outputs cannot be combined" in captured.err
+
+
+def test_llama_cpp_provider_requires_a_local_model_path(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    exit_code = main(
+        [
+            "tutor",
+            "--problem",
+            PROBLEM,
+            "--solution",
+            SOLUTION,
+            "--provider",
+            "llama-cpp",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 2
+    assert captured.out == ""
+    assert "--model-path is required" in captured.err
+
+
+def test_llama_cpp_provider_is_wired_into_complete_tutor_flow(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    model_path = tmp_path / DEFAULT_QWEN_FILENAME
+    model_bytes = b"small test fixture, never loaded as GGUF"
+    model_path.write_bytes(model_bytes)
+    created_configs: list[LlamaCppConfig] = []
+    fake = FakeModelClient(
+        structured_responses=[_diagnosis_payload()],
+        text_responses=["What relationship should remain unchanged in the second step?"],
+    )
+
+    def build_fake(config: LlamaCppConfig) -> FakeModelClient:
+        created_configs.append(config)
+        return fake
+
+    monkeypatch.setattr("math_feedback_ai.cli.LlamaCppModelClient", build_fake)
+
+    exit_code = main(
+        [
+            "tutor",
+            "--problem",
+            PROBLEM,
+            "--solution",
+            SOLUTION,
+            "--attempt-id",
+            "a1",
+            "--provider",
+            "llama-cpp",
+            "--model-path",
+            str(model_path),
+            "--model-sha256",
+            hashlib.sha256(model_bytes).hexdigest(),
+            "--model-size-bytes",
+            str(len(model_bytes)),
+            "--llama-context-window",
+            "2048",
+            "--llama-threads",
+            "2",
+            "--llama-batch-threads",
+            "4",
+            "--llama-seed",
+            "42",
+        ]
+    )
+
+    captured = capsys.readouterr()
+    assert exit_code == 0, captured.err
+    payload = json.loads(captured.out)
+    assert payload["execution_mode"] == "local_llama_cpp"
+    assert payload["diagnosis"]["overall_status"] == "incorrect"
+    assert payload["model_calls"] == {"structured": 1, "text": 1}
+    assert created_configs[0].model_path == model_path.resolve()
+    assert created_configs[0].seed == 42
 
 
 def test_invalid_reveal_level_is_an_argparse_error(

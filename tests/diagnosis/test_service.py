@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from copy import deepcopy
+from typing import cast
 
 import pytest
 
@@ -14,7 +15,12 @@ from math_feedback_ai.domain.models import (
     StudentAttempt,
 )
 from math_feedback_ai.domain.taxonomy import OverallStatus
-from math_feedback_ai.model.client import ModelTimeoutError, ModelTransportError
+from math_feedback_ai.model.client import (
+    GenerationResult,
+    ModelTimeoutError,
+    ModelTransportError,
+    TokenUsage,
+)
 from math_feedback_ai.model.fake import FakeModelClient
 
 
@@ -115,6 +121,41 @@ def test_diagnose_validates_mapping_and_records_versioned_request() -> None:
     assert "ref-1" in request.prompt
 
 
+def test_request_schema_constrains_opaque_ids_and_explicit_fields() -> None:
+    client = FakeModelClient(structured_responses=[_incorrect_payload()])
+
+    DiagnosisService(client).diagnose(_problem(), _attempt(), reference_solutions=())
+
+    schema = client.structured_requests[0].response_schema
+    properties = schema["properties"]
+    definitions = schema["$defs"]
+    assert properties["attempt_id"] == {"const": "a1", "type": "string"}
+    assert properties["reference_relation"] == {"const": "not_used", "type": "string"}
+    assert properties["step_assessments"]["minItems"] == 2
+    assert properties["step_assessments"]["maxItems"] == 2
+    assert definitions["StepAssessment"]["properties"]["step_id"] == {
+        "enum": ["step-1", "step-2"],
+        "type": "string",
+    }
+    assert definitions["StepAssessment"]["required"] == [
+        "step_id",
+        "status",
+        "confidence",
+    ]
+    assert "first_issue" not in schema["required"]
+
+
+def test_generic_schema_can_be_retained_for_controlled_comparison() -> None:
+    client = FakeModelClient(structured_responses=[_incorrect_payload()])
+    config = DiagnosisServiceConfig(specialize_response_schema=False)
+
+    DiagnosisService(client, config).diagnose(_problem(), _attempt())
+
+    schema = client.structured_requests[0].response_schema
+    assert "const" not in schema["properties"]["attempt_id"]
+    assert schema["properties"]["step_assessments"]["minItems"] == 1
+
+
 def test_diagnose_accepts_json_text() -> None:
     client = FakeModelClient(structured_responses=[json.dumps(_incorrect_payload())])
 
@@ -147,13 +188,46 @@ def test_unknown_enum_after_repair_returns_indeterminate() -> None:
     assert client.structured_call_count == 2
 
 
+def test_trace_preserves_invalid_provider_content_for_failure_analysis() -> None:
+    invalid = {"attempt_id": "wrong", "overall_status": "incorrect"}
+    client = FakeModelClient(structured_responses=[invalid])
+    service = DiagnosisService(client, DiagnosisServiceConfig(max_attempts=1))
+
+    run = service.diagnose_with_trace(_problem(), _attempt())
+
+    assert run.attempts[0].outcome == "invalid_structured_output"
+    assert run.attempts[0].raw_content == invalid
+
+
+def test_confidence_percentages_are_normalized_and_audited() -> None:
+    payload = _incorrect_payload()
+    payload["confidence"] = 95
+    assessments = cast(list[dict[str, object]], payload["step_assessments"])
+    for assessment in assessments:
+        assessment["confidence"] = 99
+    first_issue = cast(dict[str, object], payload["first_issue"])
+    first_issue["confidence"] = 98
+    client = FakeModelClient(structured_responses=[payload])
+
+    run = DiagnosisService(client).diagnose_with_trace(_problem(), _attempt())
+
+    assert run.diagnosis.confidence == 0.95
+    assert all(item.confidence == 0.99 for item in run.diagnosis.step_assessments)
+    assert run.diagnosis.first_issue is not None
+    assert run.diagnosis.first_issue.confidence == 0.98
+    assert len(run.attempts[0].normalizations) == 4
+    assert run.attempts[0].raw_content == payload
+
+
 def test_timeout_returns_indeterminate_without_unbounded_retry() -> None:
     client = FakeModelClient(structured_responses=[ModelTimeoutError("provider timed out")])
+    service = DiagnosisService(client)
 
-    diagnosis = DiagnosisService(client).diagnose(_problem(), _attempt())
+    run = service.diagnose_with_trace(_problem(), _attempt())
 
-    assert diagnosis.overall_status is OverallStatus.INDETERMINATE
+    assert run.diagnosis.overall_status is OverallStatus.INDETERMINATE
     assert client.structured_call_count == 1
+    assert run.attempts[0].latency_ms is not None
 
 
 def test_transient_transport_failure_can_use_single_retry() -> None:
@@ -325,3 +399,57 @@ def test_default_service_configuration_is_valid() -> None:
     config = DiagnosisServiceConfig()
 
     assert config.max_attempts == 2
+
+
+def test_diagnose_with_trace_preserves_provider_usage() -> None:
+    client = FakeModelClient(
+        structured_responses=[
+            GenerationResult(
+                content=_incorrect_payload(),
+                usage=TokenUsage(input_tokens=120, output_tokens=80, total_tokens=200),
+                model_name="provider-model-revision",
+                finish_reason="stop",
+                latency_ms=42.5,
+            )
+        ]
+    )
+
+    run = DiagnosisService(client).diagnose_with_trace(_problem(), _attempt())
+
+    assert run.diagnosis.overall_status is OverallStatus.INCORRECT
+    assert run.model_call_count == 1
+    assert not run.structured_output_failed
+    assert run.attempts[0].outcome == "success"
+    assert run.attempts[0].usage == TokenUsage(
+        input_tokens=120,
+        output_tokens=80,
+        total_tokens=200,
+    )
+    assert run.attempts[0].model_name == "provider-model-revision"
+    assert run.attempts[0].latency_ms == 42.5
+
+
+def test_diagnose_with_trace_records_invalid_output_before_repair() -> None:
+    client = FakeModelClient(structured_responses=["not json", _incorrect_payload()])
+
+    run = DiagnosisService(client).diagnose_with_trace(_problem(), _attempt())
+
+    assert run.diagnosis.overall_status is OverallStatus.INCORRECT
+    assert run.model_call_count == 2
+    assert run.structured_output_failed
+    assert [attempt.outcome for attempt in run.attempts] == [
+        "invalid_structured_output",
+        "success",
+    ]
+    assert run.attempts[0].error_type == "JSONDecodeError"
+
+
+def test_diagnose_with_trace_records_transport_error_before_retry() -> None:
+    client = FakeModelClient(
+        structured_responses=[ModelTransportError("temporary"), _incorrect_payload()]
+    )
+
+    run = DiagnosisService(client).diagnose_with_trace(_problem(), _attempt())
+
+    assert [attempt.outcome for attempt in run.attempts] == ["transport_error", "success"]
+    assert run.attempts[0].error_type == "ModelTransportError"

@@ -1,0 +1,8 @@
+# CPU-only local inference environment verified on Windows/Python 3.12.
+# Install with the llama-cpp-python CPU wheel index documented in README.md.
+diskcache==5.6.3
+jinja2==3.1.6
+llama-cpp-python==0.3.35
+markupsafe==3.0.3
+numpy==2.5.2
+typing-extensions==4.16.0

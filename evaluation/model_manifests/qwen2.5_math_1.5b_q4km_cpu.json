@@ -1,0 +1,34 @@
+{
+  "artifact": {
+    "filename": "Qwen2.5-Math-1.5B-Instruct-Q4_K_M.gguf",
+    "repository": "bartowski/Qwen2.5-Math-1.5B-Instruct-GGUF",
+    "revision": "951ed2aea09c43e331c612e74d83e4a23ca98e3b",
+    "sha256": "9614a50f03c897028920ca0dc4365da570bf587f9ee7768261216fe370b37e8e",
+    "size_bytes": 986048832
+  },
+  "host_preflight": {
+    "cpu": "Intel Core i5-10400",
+    "cpu_cores": 6,
+    "cpu_logical_processors": 12,
+    "gpu": "Intel UHD Graphics 630",
+    "nvidia_cuda_available": false,
+    "reported_integrated_gpu_memory_bytes": 1073741824,
+    "system_ram_gib": 11.75
+  },
+  "inference": {
+    "chat_format": "chatml",
+    "context_window": 4096,
+    "n_gpu_layers": 0,
+    "runtime": "llama-cpp-python",
+    "runtime_version": "0.3.35",
+    "seed": 1337,
+    "threads": 6,
+    "threads_batch": 12
+  },
+  "observations": {
+    "date": "2026-08-21",
+    "peak_observed_process_working_set_gib": 1.83,
+    "qualification": "Host-specific infrastructure measurement, not a quality result."
+  },
+  "schema_version": "1.0"
+}

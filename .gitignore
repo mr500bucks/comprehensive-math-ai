@@ -20,8 +20,10 @@ dist/
 evaluation/results/
 
 # Model and training artifacts (commit manifests, not weights)
+.models/
 checkpoints/
 adapters/
+*.gguf
 *.bin
 *.ckpt
 *.pt
@@ -37,4 +39,3 @@ data/private/
 .vscode/
 .DS_Store
 Thumbs.db
-

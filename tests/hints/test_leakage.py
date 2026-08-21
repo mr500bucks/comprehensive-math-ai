@@ -73,6 +73,26 @@ def test_explicit_answer_cue_is_rejected_without_a_supplied_answer(candidate: st
     assert LeakageViolationCode.FINAL_ANSWER_LEAKAGE in _codes(result)
 
 
+def test_boxed_answer_is_rejected_without_separately_supplied_final_answer() -> None:
+    candidate = (
+        "To address computing 7 times 8, here is the revised response:\n\n"
+        r"\[\boxed{56}\]"
+    )
+
+    result = LeakageChecker().check(
+        candidate,
+        HintSafetyContext(
+            max_reveal_level=1,
+            action="LIGHT_HINT",
+            reference_continuations=("Seven times eight is 56.",),
+        ),
+    )
+
+    assert not result.passed
+    assert result.severity is LeakageSeverity.HARD
+    assert LeakageViolationCode.FINAL_ANSWER_LEAKAGE in _codes(result)
+
+
 def test_short_symbolic_final_answer_is_detected() -> None:
     result = LeakageChecker().check(
         "You can now write x=7.",
