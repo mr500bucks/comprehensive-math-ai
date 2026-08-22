@@ -71,6 +71,7 @@ _ACTION_REVEAL_BOUNDS: dict[str, tuple[int, int]] = {
 _WORD_RE = re.compile(r"\w+(?:['’-]\w+)?", re.UNICODE)
 _NUMBER_OR_EXPRESSION_RE = re.compile(r"(?<![\w.])-?(?:\d+(?:\.\d+)?|\d+\s*/\s*\d+)(?![\w.])")
 _FINAL_ANSWER_CUE_RE = re.compile(
+    r"\\(?:boxed|fbox)\s*\{[^{}\n]+\}|"
     r"\b(?:final\s+answer|answer|result|solution|value)\s*(?:is|=|:)\s*\S|"
     r"\bwe\s+get\s+\S|\bit\s+(?:equals|is)\s+\S|"
     r"\b\w+\s+equals\s+[-+\wπ]|"

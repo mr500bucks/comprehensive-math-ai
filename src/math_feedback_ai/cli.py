@@ -21,7 +21,22 @@ from math_feedback_ai.evaluation.benchmark import (
 from math_feedback_ai.hints.generator import HintGenerator
 from math_feedback_ai.model.client import ModelOutputError
 from math_feedback_ai.model.fake import FakeModelClient
+from math_feedback_ai.model.llama_cpp import (
+    DEFAULT_QWEN_FILENAME,
+    DEFAULT_QWEN_REPOSITORY,
+    DEFAULT_QWEN_REVISION,
+    DEFAULT_QWEN_SHA256,
+    DEFAULT_QWEN_SIZE_BYTES,
+    LlamaCppConfig,
+    LlamaCppModelClient,
+)
+from math_feedback_ai.model.openai_responses import (
+    OpenAIResponsesClient,
+    OpenAIResponsesConfig,
+)
 from math_feedback_ai.orchestration.tutor import TutorContext, TutorOrchestrator
+
+type CliModelClient = FakeModelClient | OpenAIResponsesClient | LlamaCppModelClient
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -30,8 +45,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="math-feedback-ai",
         description=(
-            "Run the research tutoring pipeline. No live model provider is configured; "
-            "without scripted model output the command safely abstains."
+            "Run the research tutoring pipeline. It safely abstains by default; OpenAI or "
+            "a verified local llama-cpp model can be selected explicitly."
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
@@ -47,6 +62,73 @@ def build_parser() -> argparse.ArgumentParser:
     )
     tutor.add_argument("--problem", required=True, help="math problem statement")
     tutor.add_argument("--solution", required=True, help="student solution text")
+    tutor.add_argument(
+        "--provider",
+        choices=("none", "openai", "llama-cpp"),
+        default="none",
+        help="model provider; none preserves provider-free safe abstention",
+    )
+    tutor.add_argument(
+        "--model",
+        help="provider model ID; for OpenAI, required here or through OPENAI_MODEL",
+    )
+    tutor.add_argument(
+        "--openai-base-url",
+        help="advanced: HTTPS OpenAI API base URL; defaults to OPENAI_BASE_URL or official API",
+    )
+    tutor.add_argument(
+        "--model-path",
+        type=Path,
+        help="local GGUF path; required for --provider llama-cpp",
+    )
+    tutor.add_argument(
+        "--model-sha256",
+        default=DEFAULT_QWEN_SHA256,
+        help="expected lowercase SHA-256 for the local GGUF artifact",
+    )
+    tutor.add_argument(
+        "--model-size-bytes",
+        type=_positive_int,
+        default=DEFAULT_QWEN_SIZE_BYTES,
+        help="expected exact local GGUF size",
+    )
+    tutor.add_argument(
+        "--llama-context-window",
+        type=_positive_int,
+        default=4_096,
+        help="local llama-cpp token context size",
+    )
+    tutor.add_argument(
+        "--llama-threads",
+        type=_positive_int,
+        default=6,
+        help="CPU threads used for local token generation",
+    )
+    tutor.add_argument(
+        "--llama-batch-threads",
+        type=_positive_int,
+        default=12,
+        help="CPU threads used for local prompt/batch evaluation",
+    )
+    tutor.add_argument(
+        "--llama-seed",
+        type=_nonnegative_int,
+        default=1_337,
+        help="deterministic local generation seed",
+    )
+    tutor.add_argument(
+        "--provider-max-retries",
+        type=_provider_retry_count,
+        default=1,
+        metavar="0..2",
+        help="bounded retries for transient provider transport/timeout failures",
+    )
+    tutor.add_argument(
+        "--timeout-seconds",
+        type=_positive_float,
+        default=30.0,
+        help="timeout applied to each diagnosis or hint generation request",
+    )
     tutor.add_argument("--problem-id", default="cli-problem", help="stable problem ID")
     tutor.add_argument("--attempt-id", help="stable attempt ID; derived when omitted")
     tutor.add_argument(
@@ -148,11 +230,35 @@ def _nonnegative_int(value: str) -> int:
     return parsed
 
 
+def _positive_int(value: str) -> int:
+    parsed = _nonnegative_int(value)
+    if parsed == 0:
+        raise argparse.ArgumentTypeError("must be positive")
+    return parsed
+
+
 def _reveal_level(value: str) -> RevealLevel:
     try:
         return RevealLevel(int(value))
     except (TypeError, ValueError) as exc:
         raise argparse.ArgumentTypeError("must be a reveal level from 0 to 5") from exc
+
+
+def _provider_retry_count(value: str) -> int:
+    parsed = _nonnegative_int(value)
+    if parsed > 2:
+        raise argparse.ArgumentTypeError("must be a provider retry count from 0 to 2")
+    return parsed
+
+
+def _positive_float(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("must be a number") from exc
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be positive")
+    return parsed
 
 
 def _read_scripted_text(value: str) -> str:
@@ -178,21 +284,75 @@ def _run_tutor(namespace: argparse.Namespace) -> int:
     if hint_values and not diagnosis_values:
         raise ValueError("--hint-text requires --diagnosis-json")
 
+    provider = cast(str, namespace.provider)
+    if provider != "none" and (diagnosis_values or hint_values):
+        raise ValueError("scripted model outputs cannot be combined with a live provider")
+    if provider == "none" and (
+        namespace.model is not None
+        or namespace.openai_base_url is not None
+        or namespace.model_path is not None
+    ):
+        raise ValueError("provider-specific model options require a live --provider")
+    if provider == "openai" and namespace.model_path is not None:
+        raise ValueError("--model-path requires --provider llama-cpp")
+    if provider == "llama-cpp" and (
+        namespace.model is not None or namespace.openai_base_url is not None
+    ):
+        raise ValueError("--model and --openai-base-url require --provider openai")
+
     diagnosis_scripts = tuple(_read_scripted_text(value) for value in diagnosis_values)
     hint_scripts = tuple(_read_scripted_text(value) for value in hint_values)
-    structured_responses = (
-        diagnosis_scripts
-        if diagnosis_scripts
-        else (ModelOutputError("no live model provider is configured"),)
+    if provider == "openai":
+        client: CliModelClient = OpenAIResponsesClient(
+            OpenAIResponsesConfig.from_env(
+                model=cast(str | None, namespace.model),
+                base_url=cast(str | None, namespace.openai_base_url),
+                max_retries=cast(int, namespace.provider_max_retries),
+            )
+        )
+        execution_mode = "live_openai"
+        diagnosis_attempts = 2
+    elif provider == "llama-cpp":
+        model_path = cast(Path | None, namespace.model_path)
+        if model_path is None:
+            raise ValueError("--model-path is required for --provider llama-cpp")
+        client = LlamaCppModelClient(
+            LlamaCppConfig(
+                model_path=model_path,
+                model_repository=DEFAULT_QWEN_REPOSITORY,
+                model_revision=DEFAULT_QWEN_REVISION,
+                model_filename=DEFAULT_QWEN_FILENAME,
+                expected_sha256=cast(str, namespace.model_sha256),
+                expected_size_bytes=cast(int, namespace.model_size_bytes),
+                n_ctx=cast(int, namespace.llama_context_window),
+                n_threads=cast(int, namespace.llama_threads),
+                n_threads_batch=cast(int, namespace.llama_batch_threads),
+                seed=cast(int, namespace.llama_seed),
+            )
+        )
+        execution_mode = "local_llama_cpp"
+        diagnosis_attempts = 2
+    else:
+        structured_responses = (
+            diagnosis_scripts
+            if diagnosis_scripts
+            else (ModelOutputError("no live model provider is configured"),)
+        )
+        client = FakeModelClient(
+            structured_responses=structured_responses,
+            text_responses=hint_scripts,
+        )
+        execution_mode = "scripted_model_outputs" if diagnosis_scripts else "safe_abstention"
+        diagnosis_attempts = 2 if len(diagnosis_scripts) == 2 else 1
+
+    timeout_seconds = cast(float, namespace.timeout_seconds)
+    diagnosis_config = DiagnosisServiceConfig(
+        max_attempts=diagnosis_attempts,
+        timeout_seconds=timeout_seconds,
     )
-    client = FakeModelClient(
-        structured_responses=structured_responses,
-        text_responses=hint_scripts,
-    )
-    diagnosis_config = DiagnosisServiceConfig(max_attempts=2 if len(diagnosis_scripts) == 2 else 1)
     orchestrator = TutorOrchestrator(
         diagnosis_service=DiagnosisService(client, diagnosis_config),
-        hint_generator=HintGenerator(client),
+        hint_generator=HintGenerator(client, timeout_seconds=timeout_seconds),
     )
 
     reference_texts = cast(list[str], namespace.reference)
@@ -224,7 +384,7 @@ def _run_tutor(namespace: argparse.Namespace) -> int:
     payload = _result_payload(
         result,
         client=client,
-        scripted=bool(diagnosis_scripts),
+        execution_mode=execution_mode,
     )
     print(json.dumps(payload, indent=2, ensure_ascii=False, sort_keys=True))
     return 0
@@ -233,15 +393,15 @@ def _run_tutor(namespace: argparse.Namespace) -> int:
 def _result_payload(
     result: TutorResult,
     *,
-    client: FakeModelClient,
-    scripted: bool,
+    client: CliModelClient,
+    execution_mode: str,
 ) -> dict[str, object]:
     leakage = (
         result.leakage_check.model_dump(mode="json") if result.leakage_check is not None else None
     )
     hint = result.response.message if result.response.reveal_level > RevealLevel.NONE else None
     return {
-        "execution_mode": "scripted_model_outputs" if scripted else "safe_abstention",
+        "execution_mode": execution_mode,
         "parse": {
             "attempt_id": result.attempt.attempt_id,
             "strategy": result.attempt.parse_strategy.value,
