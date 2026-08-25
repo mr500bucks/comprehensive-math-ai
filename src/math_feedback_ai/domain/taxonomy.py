@@ -26,9 +26,11 @@ class StepStatus(StrEnum):
     """Status of an individual student-authored step."""
 
     VALID = "valid"
+    VALID_BUT_INEFFICIENT = "valid_but_inefficient"
     INVALID = "invalid"
     UNSUPPORTED = "unsupported"
     AMBIGUOUS = "ambiguous"
+    DEPENDENT_ON_PREVIOUS_ERROR = "dependent_on_previous_error"
 
 
 class IssueCode(StrEnum):

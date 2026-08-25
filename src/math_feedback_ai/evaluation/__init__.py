@@ -14,8 +14,12 @@ from math_feedback_ai.evaluation.metrics import (
 )
 from math_feedback_ai.evaluation.pilot import (
     DiagnosisPilotCaseV1,
+    DiagnosisPilotReviewedCaseV1,
     HumanReviewStatus,
     validate_pilot_cases,
+)
+from math_feedback_ai.evaluation.reviewed_diagnosis_pilot import (
+    load_reviewed_diagnosis_pilot,
 )
 from math_feedback_ai.evaluation.tutoring import (
     HintGenerationObservation,
@@ -28,12 +32,14 @@ from math_feedback_ai.evaluation.tutoring import (
     TutoringMetricSnapshot,
     TutoringUsageSummary,
     development_tutoring_cases,
+    reviewed_pilot_tutoring_cases,
     run_tutoring_experiment,
     write_tutoring_artifacts,
 )
 
 __all__ = [
     "DiagnosisPilotCaseV1",
+    "DiagnosisPilotReviewedCaseV1",
     "HumanReviewStatus",
     "HintGenerationObservation",
     "HintReviewRecord",
@@ -52,8 +58,10 @@ __all__ = [
     "false_rejection_rate",
     "localization_accuracy",
     "load_diagnosis_pilot",
+    "load_reviewed_diagnosis_pilot",
     "macro_f1",
     "rate",
+    "reviewed_pilot_tutoring_cases",
     "run_tutoring_experiment",
     "summarize_system_metrics",
     "validate_pilot_cases",

@@ -15,8 +15,13 @@ from math_feedback_ai.diagnosis.prompt import DIAGNOSIS_PROMPT_VERSION
 from math_feedback_ai.diagnosis.service import DiagnosisServiceConfig
 from math_feedback_ai.domain.models import DiagnosisV1
 from math_feedback_ai.evaluation.benchmark import load_development_benchmark
+from math_feedback_ai.evaluation.reviewed_diagnosis_pilot import (
+    REVIEWED_PILOT_VERSION,
+    load_reviewed_diagnosis_pilot,
+)
 from math_feedback_ai.evaluation.tutoring import (
     development_tutoring_cases,
+    reviewed_pilot_tutoring_cases,
     run_tutoring_experiment,
     write_tutoring_artifacts,
 )
@@ -49,9 +54,14 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     parser.add_argument(
+        "--benchmark",
+        choices=("development", "pilot-reviewed"),
+        default="development",
+    )
+    parser.add_argument(
         "--benchmark-path",
         type=Path,
-        help="explicit development JSONL override; omit for the canonical fixture",
+        help="explicit JSONL override for the selected benchmark",
     )
     parser.add_argument(
         "--provider",
@@ -60,6 +70,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="none runs a deterministic safe-abstention control",
     )
     parser.add_argument("--model-path", type=Path, help="verified local GGUF model path")
+    parser.add_argument("--model-repository", default=DEFAULT_QWEN_REPOSITORY)
+    parser.add_argument("--model-revision", default=DEFAULT_QWEN_REVISION)
+    parser.add_argument("--model-filename", default=DEFAULT_QWEN_FILENAME)
+    parser.add_argument("--quantization", default="Q4_K_M")
     parser.add_argument("--model-sha256", default=DEFAULT_QWEN_SHA256)
     parser.add_argument("--model-size-bytes", type=_positive_int, default=DEFAULT_QWEN_SIZE_BYTES)
     parser.add_argument("--llama-context-window", type=_positive_int, default=4_096)
@@ -166,15 +180,16 @@ def _make_client(
     model_path = cast(Path, namespace.model_path)
     config = LlamaCppConfig(
         model_path=model_path,
-        model_repository=DEFAULT_QWEN_REPOSITORY,
-        model_revision=DEFAULT_QWEN_REVISION,
-        model_filename=DEFAULT_QWEN_FILENAME,
+        model_repository=cast(str, namespace.model_repository),
+        model_revision=cast(str, namespace.model_revision),
+        model_filename=cast(str, namespace.model_filename),
         expected_sha256=cast(str, namespace.model_sha256),
         expected_size_bytes=cast(int, namespace.model_size_bytes),
         n_ctx=cast(int, namespace.llama_context_window),
         n_threads=cast(int, namespace.llama_threads),
         n_threads_batch=cast(int, namespace.llama_batch_threads),
         seed=cast(int, namespace.llama_seed),
+        quantization=cast(str, namespace.quantization),
     )
     metadata = config.public_metadata()
     try:
@@ -213,8 +228,21 @@ class _OracleDiagnosisClient:
 def _run(namespace: argparse.Namespace) -> int:
     _validate_provider_options(namespace)
     benchmark_path = cast(Path | None, namespace.benchmark_path)
-    examples = load_development_benchmark(benchmark_path)
-    cases = development_tutoring_cases(examples)
+    benchmark = cast(str, namespace.benchmark)
+    if benchmark == "pilot-reviewed":
+        reviewed = load_reviewed_diagnosis_pilot(benchmark_path)
+        cases = reviewed_pilot_tutoring_cases(reviewed)
+        benchmark_name = REVIEWED_PILOT_VERSION
+        annotation_status = "reviewed"
+        schema_version = "1.1"
+        oracle_diagnoses = (case.reviewed_diagnosis for case in reviewed)
+    else:
+        examples = load_development_benchmark(benchmark_path)
+        cases = development_tutoring_cases(examples)
+        benchmark_name = "development_v1"
+        annotation_status = "not_human_validated"
+        schema_version = "1.0"
+        oracle_diagnoses = (example.gold_diagnosis for example in examples)
     attempts = cast(int, namespace.diagnosis_attempts)
     provider_client, provider_metadata = _make_client(
         namespace,
@@ -225,9 +253,13 @@ def _run(namespace: argparse.Namespace) -> int:
     if oracle_diagnosis:
         client = _OracleDiagnosisClient(
             inner=provider_client,
-            diagnoses=iter(example.gold_diagnosis for example in examples),
+            diagnoses=iter(oracle_diagnoses),
         )
-        provider_metadata["diagnosis_source"] = "development_gold_fixture"
+        provider_metadata["diagnosis_source"] = (
+            "development_gold_fixture"
+            if benchmark == "development"
+            else f"{benchmark_name}_gold_fixture"
+        )
         provider_metadata["qualification"] = (
             "Oracle-diagnosis hint/safety diagnostic; not end-to-end model quality."
         )
@@ -239,8 +271,8 @@ def _run(namespace: argparse.Namespace) -> int:
         specialize_response_schema=not cast(bool, namespace.generic_response_schema),
     )
     report = run_tutoring_experiment(
-        benchmark_name="development_v1",
-        annotation_status="not_human_validated",
+        benchmark_name=benchmark_name,
+        annotation_status=annotation_status,
         cases=cases,
         client=client,
         diagnosis_config=service_config,
@@ -252,6 +284,8 @@ def _run(namespace: argparse.Namespace) -> int:
             provider_client.timeout_stopping_supported
         )
     metadata: dict[str, object] = {
+        "benchmark_version": benchmark_name,
+        "diagnosis_schema_version": schema_version,
         "benchmark_source": (
             str(benchmark_path.resolve()) if benchmark_path is not None else "committed_or_built_in"
         ),

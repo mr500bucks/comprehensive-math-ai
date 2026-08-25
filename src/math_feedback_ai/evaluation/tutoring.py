@@ -16,7 +16,7 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from statistics import fmean
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from math_feedback_ai.diagnosis.service import (
     DiagnosisRun,
@@ -49,6 +49,9 @@ from math_feedback_ai.orchestration.tutor import TutorContext, TutorOrchestrator
 
 type ModelCallOperation = Literal["structured", "text"]
 type ModelCallOutcome = Literal["success", "error"]
+
+if TYPE_CHECKING:
+    from math_feedback_ai.evaluation.pilot import DiagnosisPilotReviewedCaseV1
 
 
 @dataclass(frozen=True, slots=True)
@@ -369,6 +372,25 @@ def development_tutoring_cases(
             )
         )
     return tuple(cases)
+
+
+def reviewed_pilot_tutoring_cases(
+    cases: Sequence[DiagnosisPilotReviewedCaseV1],
+) -> tuple[TutoringEvaluationCase, ...]:
+    """Adapt reviewed pilot labels for a gated complete-pipeline experiment."""
+
+    return tuple(
+        TutoringEvaluationCase(
+            case_id=case.case_id,
+            problem=case.problem,
+            student_solution=case.student_attempt.raw_text,
+            expected_decision=case.reviewed_decision,
+            attempt_id=case.student_attempt.attempt_id,
+            category=case.category,
+            human_review_status=case.human_review_status,
+        )
+        for case in cases
+    )
 
 
 def run_tutoring_experiment(
@@ -881,6 +903,7 @@ __all__ = [
     "TutoringMetricSnapshot",
     "TutoringUsageSummary",
     "development_tutoring_cases",
+    "reviewed_pilot_tutoring_cases",
     "run_tutoring_experiment",
     "write_tutoring_artifacts",
 ]

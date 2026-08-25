@@ -20,6 +20,7 @@ from math_feedback_ai.evaluation.diagnosis import (
     development_evaluation_cases,
     diagnosis_case_set_sha256,
     pilot_evaluation_cases,
+    reviewed_pilot_evaluation_cases,
     run_diagnosis_experiment,
     write_diagnosis_artifacts,
 )
@@ -28,6 +29,10 @@ from math_feedback_ai.evaluation.failure_analysis import (
     analyze_diagnosis_failures,
     compare_reference_ablation,
     write_analysis_report,
+)
+from math_feedback_ai.evaluation.reviewed_diagnosis_pilot import (
+    REVIEWED_PILOT_VERSION,
+    load_reviewed_diagnosis_pilot,
 )
 from math_feedback_ai.model.client import ModelClient, ModelOutputError
 from math_feedback_ai.model.fake import FakeModelClient
@@ -53,7 +58,11 @@ def build_parser() -> argparse.ArgumentParser:
         description=__doc__,
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
-    parser.add_argument("--benchmark", choices=("development", "pilot"), required=True)
+    parser.add_argument(
+        "--benchmark",
+        choices=("development", "pilot", "pilot-reviewed"),
+        required=True,
+    )
     parser.add_argument(
         "--benchmark-path",
         type=Path,
@@ -74,6 +83,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model", help="OpenAI model ID or OPENAI_MODEL override")
     parser.add_argument("--openai-base-url", help="HTTPS OpenAI Responses API base URL")
     parser.add_argument("--model-path", type=Path, help="verified local GGUF model path")
+    parser.add_argument("--model-repository", default=DEFAULT_QWEN_REPOSITORY)
+    parser.add_argument("--model-revision", default=DEFAULT_QWEN_REVISION)
+    parser.add_argument("--model-filename", default=DEFAULT_QWEN_FILENAME)
+    parser.add_argument("--quantization", default="Q4_K_M")
     parser.add_argument("--model-sha256", default=DEFAULT_QWEN_SHA256)
     parser.add_argument("--model-size-bytes", type=_positive_int, default=DEFAULT_QWEN_SIZE_BYTES)
     parser.add_argument("--llama-context-window", type=_positive_int, default=4_096)
@@ -159,12 +172,30 @@ def _reference_modes(value: str) -> tuple[ReferenceMode, ...]:
 def _load_cases(
     benchmark: str,
     path: Path | None,
-) -> tuple[str, str, tuple[DiagnosisEvaluationCase, ...]]:
+) -> tuple[str, str, str, tuple[DiagnosisEvaluationCase, ...]]:
     if benchmark == "development":
         examples = load_development_benchmark(path)
-        return "development_v1", "not_human_validated", development_evaluation_cases(examples)
-    cases = load_diagnosis_pilot(path)
-    return "diagnosis_pilot_v1", "pending", pilot_evaluation_cases(cases)
+        return (
+            "development_v1",
+            "not_human_validated",
+            "1.0",
+            development_evaluation_cases(examples),
+        )
+    if benchmark == "pilot-reviewed":
+        reviewed_cases = load_reviewed_diagnosis_pilot(path)
+        return (
+            REVIEWED_PILOT_VERSION,
+            "reviewed",
+            "1.1",
+            reviewed_pilot_evaluation_cases(reviewed_cases),
+        )
+    provisional_cases = load_diagnosis_pilot(path)
+    return (
+        "diagnosis_pilot_v1",
+        "pending",
+        "1.0",
+        pilot_evaluation_cases(provisional_cases),
+    )
 
 
 def _validate_provider_options(namespace: argparse.Namespace) -> None:
@@ -198,15 +229,16 @@ def _make_client(
             raise ValueError("--model-path is required for --provider llama-cpp")
         llama_config = LlamaCppConfig(
             model_path=model_path,
-            model_repository=DEFAULT_QWEN_REPOSITORY,
-            model_revision=DEFAULT_QWEN_REVISION,
-            model_filename=DEFAULT_QWEN_FILENAME,
+            model_repository=cast(str, namespace.model_repository),
+            model_revision=cast(str, namespace.model_revision),
+            model_filename=cast(str, namespace.model_filename),
             expected_sha256=cast(str, namespace.model_sha256),
             expected_size_bytes=cast(int, namespace.model_size_bytes),
             n_ctx=cast(int, namespace.llama_context_window),
             n_threads=cast(int, namespace.llama_threads),
             n_threads_batch=cast(int, namespace.llama_batch_threads),
             seed=cast(int, namespace.llama_seed),
+            quantization=cast(str, namespace.quantization),
         )
         metadata = llama_config.public_metadata()
         try:
@@ -228,7 +260,7 @@ def _make_client(
 def _run(namespace: argparse.Namespace) -> int:
     _validate_provider_options(namespace)
     benchmark_path = cast(Path | None, namespace.benchmark_path)
-    benchmark_name, annotation_status, cases = _load_cases(
+    benchmark_name, annotation_status, schema_version, cases = _load_cases(
         cast(str, namespace.benchmark),
         benchmark_path,
     )
@@ -263,6 +295,8 @@ def _run(namespace: argparse.Namespace) -> int:
             )
         metadata: dict[str, object] = {
             "benchmark": benchmark_name,
+            "benchmark_version": benchmark_name,
+            "diagnosis_schema_version": schema_version,
             "case_set_sha256": diagnosis_case_set_sha256(cases),
             "benchmark_source": (
                 str(benchmark_path.resolve())

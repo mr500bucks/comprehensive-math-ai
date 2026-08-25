@@ -226,9 +226,17 @@ class StepAssessment(CanonicalModel):
     issue_codes: tuple[IssueCode, ...] = ()
     explanation: Annotated[str, Field(min_length=1)] | None = None
     evidence: Annotated[str, Field(min_length=1)] | None = None
+    efficiency_note: Annotated[str, Field(min_length=1)] | None = Field(
+        default=None,
+        exclude_if=lambda value: value is None,
+    )
+    depends_on_step_ids: tuple[StableId, ...] = Field(
+        default=(),
+        exclude_if=lambda value: not value,
+    )
     confidence: Confidence
 
-    @field_validator("explanation", "evidence")
+    @field_validator("explanation", "evidence", "efficiency_note")
     @classmethod
     def _optional_text_is_nonblank(cls, value: str | None) -> str | None:
         if value is None:
@@ -239,6 +247,8 @@ class StepAssessment(CanonicalModel):
     def _assessment_is_coherent(self) -> Self:
         if len(self.issue_codes) != len(set(self.issue_codes)):
             raise ValueError("assessment issue_codes must be unique")
+        if len(self.depends_on_step_ids) != len(set(self.depends_on_step_ids)):
+            raise ValueError("assessment dependencies must be unique")
         if self.status in {StepStatus.INVALID, StepStatus.UNSUPPORTED}:
             if not self.issue_codes:
                 raise ValueError("invalid or unsupported steps require an issue code")
@@ -246,6 +256,20 @@ class StepAssessment(CanonicalModel):
                 raise ValueError("invalid or unsupported steps require an explanation")
         if self.status is StepStatus.AMBIGUOUS and self.explanation is None:
             raise ValueError("ambiguous steps require an explanation")
+        if self.status is StepStatus.VALID_BUT_INEFFICIENT:
+            if self.issue_codes:
+                raise ValueError("valid-but-inefficient steps cannot carry issue codes")
+            if self.efficiency_note is None:
+                raise ValueError("valid-but-inefficient steps require an efficiency note")
+            if self.depends_on_step_ids:
+                raise ValueError("valid-but-inefficient steps cannot depend on an error")
+        elif self.efficiency_note is not None:
+            raise ValueError("efficiency notes require valid_but_inefficient status")
+        if self.status is StepStatus.DEPENDENT_ON_PREVIOUS_ERROR:
+            if self.issue_codes:
+                raise ValueError("dependent steps cannot carry issue codes")
+            if self.explanation is None or not self.depends_on_step_ids:
+                raise ValueError("dependent steps require an explanation and dependency")
         if self.status is StepStatus.VALID:
             disallowed = set(self.issue_codes) - {IssueCode.RELEVANCE_IRRELEVANT}
             if disallowed:
@@ -301,7 +325,7 @@ class CompletionGap(CanonicalModel):
 class DiagnosisV1(CanonicalModel):
     """Version 1 structured mathematical diagnosis, independent of tutor policy."""
 
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["1.0", "1.1"] = "1.0"
     attempt_id: StableId
     overall_status: OverallStatus
     step_assessments: Annotated[tuple[StepAssessment, ...], Field(min_length=1)]
@@ -319,6 +343,24 @@ class DiagnosisV1(CanonicalModel):
         if len(assessment_ids) != len(set(assessment_ids)):
             raise ValueError("each step may be assessed only once")
         known_ids = set(assessment_ids)
+        assessment_positions = {
+            assessment.step_id: index for index, assessment in enumerate(self.step_assessments)
+        }
+        assessments_by_id = {assessment.step_id: assessment for assessment in self.step_assessments}
+
+        for assessment in self.step_assessments:
+            for dependency_id in assessment.depends_on_step_ids:
+                if dependency_id not in known_ids:
+                    raise ValueError(f"diagnosis references unassessed dependency: {dependency_id}")
+                if assessment_positions[dependency_id] >= assessment_positions[assessment.step_id]:
+                    raise ValueError("step dependencies must point to earlier assessed steps")
+                dependency = assessments_by_id[dependency_id]
+                if dependency.status not in {
+                    StepStatus.INVALID,
+                    StepStatus.UNSUPPORTED,
+                    StepStatus.DEPENDENT_ON_PREVIOUS_ERROR,
+                }:
+                    raise ValueError("step dependencies must trace an earlier mathematical error")
 
         referenced_ids = {
             step_id
@@ -340,20 +382,31 @@ class DiagnosisV1(CanonicalModel):
             if self.first_issue.code not in assessment.issue_codes:
                 raise ValueError("first_issue code must appear on its step assessment")
             if (
-                assessment.status is StepStatus.VALID
+                assessment.status
+                in {
+                    StepStatus.VALID,
+                    StepStatus.VALID_BUT_INEFFICIENT,
+                    StepStatus.DEPENDENT_ON_PREVIOUS_ERROR,
+                }
                 and self.first_issue.code is not IssueCode.RELEVANCE_IRRELEVANT
             ):
                 raise ValueError("a mathematical first issue cannot point to a valid step")
-            if (
-                self.overall_status is OverallStatus.INCORRECT
-                and assessment.status is StepStatus.VALID
-            ):
+            if self.overall_status is OverallStatus.INCORRECT and assessment.status in {
+                StepStatus.VALID,
+                StepStatus.VALID_BUT_INEFFICIENT,
+                StepStatus.DEPENDENT_ON_PREVIOUS_ERROR,
+            }:
                 raise ValueError("an incorrect diagnosis must localize a mathematical issue")
             questionable = next(
                 (
                     item
                     for item in self.step_assessments
-                    if item.status is not StepStatus.VALID
+                    if item.status
+                    not in {
+                        StepStatus.VALID,
+                        StepStatus.VALID_BUT_INEFFICIENT,
+                        StepStatus.DEPENDENT_ON_PREVIOUS_ERROR,
+                    }
                     or (
                         self.overall_status is OverallStatus.CORRECT_BUT_INEFFICIENT
                         and item.issue_codes
@@ -387,7 +440,8 @@ class DiagnosisV1(CanonicalModel):
             if self.first_issue is not None:
                 raise ValueError("a merely incomplete diagnosis cannot contain a first issue")
             if any(
-                assessment.status is not StepStatus.VALID for assessment in self.step_assessments
+                assessment.status not in {StepStatus.VALID, StepStatus.VALID_BUT_INEFFICIENT}
+                for assessment in self.step_assessments
             ):
                 raise ValueError(
                     "a merely incomplete diagnosis must contain a valid reasoning prefix"
@@ -398,10 +452,23 @@ class DiagnosisV1(CanonicalModel):
         if self.overall_status is OverallStatus.CORRECT_BUT_INEFFICIENT:
             if self.completion_gap is not None:
                 raise ValueError("correct-but-inefficient work cannot contain a completion gap")
+            allowed_statuses = {StepStatus.VALID, StepStatus.VALID_BUT_INEFFICIENT}
             if any(
-                assessment.status is not StepStatus.VALID for assessment in self.step_assessments
+                assessment.status not in allowed_statuses for assessment in self.step_assessments
             ):
                 raise ValueError("correct-but-inefficient work must remain mathematically valid")
+            if self.schema_version == "1.1":
+                if self.first_issue is not None:
+                    raise ValueError("schema 1.1 inefficiency cannot be encoded as first_issue")
+                if any(assessment.issue_codes for assessment in self.step_assessments):
+                    raise ValueError("schema 1.1 inefficiency cannot use mathematical issue codes")
+                if not any(
+                    assessment.status is StepStatus.VALID_BUT_INEFFICIENT
+                    for assessment in self.step_assessments
+                ):
+                    raise ValueError(
+                        "schema 1.1 correct-but-inefficient work needs a valid-but-inefficient step"
+                    )
             if (
                 self.first_issue is not None
                 and self.first_issue.code is not IssueCode.RELEVANCE_IRRELEVANT

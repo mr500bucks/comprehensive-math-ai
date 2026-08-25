@@ -107,6 +107,35 @@ def test_oracle_diagnosis_mode_is_explicitly_qualified(
     assert summary["provider_usage"]["hint_calls"] > 0
 
 
+def test_reviewed_pilot_is_available_for_gated_full_tutoring(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert (
+        main(
+            [
+                "--benchmark",
+                "pilot-reviewed",
+                "--provider",
+                "none",
+                "--diagnosis-attempts",
+                "1",
+                "--output-dir",
+                str(tmp_path),
+            ]
+        )
+        == 0
+    )
+    manifest = json.loads(capsys.readouterr().out)
+    summary = json.loads(Path(manifest["summary"]).read_text(encoding="utf-8"))
+
+    assert manifest["benchmark"] == "diagnosis_pilot_v1_reviewed"
+    assert manifest["annotation_status"] == "reviewed"
+    assert summary["examples"] == 50
+    assert summary["run_metadata"]["benchmark_version"] == "diagnosis_pilot_v1_reviewed"
+    assert summary["run_metadata"]["diagnosis_schema_version"] == "1.1"
+
+
 def test_none_provider_rejects_local_model_path(
     capsys: pytest.CaptureFixture[str],
 ) -> None:

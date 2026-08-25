@@ -65,7 +65,7 @@ def _attempt(*, problem_id: str = "p1") -> StudentAttempt:
 
 def _incorrect_payload() -> dict[str, object]:
     return {
-        "schema_version": "1.0",
+        "schema_version": "1.1",
         "attempt_id": "a1",
         "overall_status": "incorrect",
         "step_assessments": [
@@ -114,8 +114,8 @@ def test_diagnose_validates_mapping_and_records_versioned_request() -> None:
     assert diagnosis.first_issue.step_id == "step-2"
     assert client.structured_call_count == 1
     request = client.structured_requests[0]
-    assert request.schema_name == "diagnosis_v1"
-    assert request.metadata["prompt_version"] == "diagnosis_v1"
+    assert request.schema_name == "diagnosis_v2"
+    assert request.metadata["prompt_version"] == "diagnosis_v2"
     assert "explicitly non-exhaustive" in request.prompt
     assert "Difference from a reference solution is never" in request.prompt
     assert "ref-1" in request.prompt
@@ -134,6 +134,10 @@ def test_request_schema_constrains_opaque_ids_and_explicit_fields() -> None:
     assert properties["step_assessments"]["minItems"] == 2
     assert properties["step_assessments"]["maxItems"] == 2
     assert definitions["StepAssessment"]["properties"]["step_id"] == {
+        "enum": ["step-1", "step-2"],
+        "type": "string",
+    }
+    assert definitions["StepAssessment"]["properties"]["depends_on_step_ids"]["items"] == {
         "enum": ["step-1", "step-2"],
         "type": "string",
     }

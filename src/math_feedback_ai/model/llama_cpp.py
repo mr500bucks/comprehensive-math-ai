@@ -67,6 +67,7 @@ class LlamaCppConfig:
     n_threads_batch: int = 12
     seed: int = 1_337
     chat_format: str = "chatml"
+    quantization: str = "Q4_K_M"
 
     def __post_init__(self) -> None:
         unresolved = self.model_path.absolute()
@@ -104,12 +105,15 @@ class LlamaCppConfig:
             raise LlamaCppConfigurationError("seed must be non-negative")
         if not self.chat_format.strip():
             raise LlamaCppConfigurationError("chat_format must not be blank")
+        if not self.quantization.strip():
+            raise LlamaCppConfigurationError("quantization must not be blank")
         object.__setattr__(self, "model_path", resolved)
         object.__setattr__(self, "model_repository", self.model_repository.strip())
         object.__setattr__(self, "model_revision", self.model_revision.strip())
         object.__setattr__(self, "model_filename", self.model_filename.strip())
         object.__setattr__(self, "expected_sha256", digest)
         object.__setattr__(self, "chat_format", self.chat_format.strip())
+        object.__setattr__(self, "quantization", self.quantization.strip())
 
     def verify_artifact(self) -> None:
         """Fail closed unless the local bytes match the pinned artifact."""
@@ -150,6 +154,7 @@ class LlamaCppConfig:
             "n_threads_batch": self.n_threads_batch,
             "seed": self.seed,
             "chat_format": self.chat_format,
+            "quantization": self.quantization,
             "n_gpu_layers": 0,
         }
 

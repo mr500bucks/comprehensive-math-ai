@@ -11,7 +11,7 @@ from typing import Any
 
 from math_feedback_ai.diagnosis.service import DiagnosisAttemptTrace
 from math_feedback_ai.domain.models import DiagnosisV1
-from math_feedback_ai.domain.taxonomy import OverallStatus
+from math_feedback_ai.domain.taxonomy import OverallStatus, StepStatus
 from math_feedback_ai.evaluation.diagnosis import (
     DiagnosisEvaluationCase,
     DiagnosisExperimentReport,
@@ -255,6 +255,30 @@ def _failure_categories(
     categories: list[str] = []
     expected_status = expected.overall_status
     predicted_status = predicted.overall_status
+    expected_assessments = {item.step_id: item for item in expected.step_assessments}
+    predicted_assessments = {item.step_id: item for item in predicted.step_assessments}
+    inefficient_ids = {
+        step_id
+        for step_id, item in expected_assessments.items()
+        if item.status is StepStatus.VALID_BUT_INEFFICIENT
+    }
+    if inefficient_ids and any(
+        predicted_assessments[step_id].status in {StepStatus.INVALID, StepStatus.UNSUPPORTED}
+        or predicted_assessments[step_id].issue_codes
+        for step_id in inefficient_ids
+    ):
+        categories.append("valid_inefficiency_made_mathematical_error")
+    dependent_ids = {
+        step_id
+        for step_id, item in expected_assessments.items()
+        if item.status is StepStatus.DEPENDENT_ON_PREVIOUS_ERROR
+    }
+    if dependent_ids and any(
+        predicted_assessments[step_id].status in {StepStatus.INVALID, StepStatus.UNSUPPORTED}
+        or predicted_assessments[step_id].issue_codes
+        for step_id in dependent_ids
+    ):
+        categories.append("dependent_consequence_made_independent_error")
     if expected_status is predicted_status:
         pass
     elif predicted_status is OverallStatus.INDETERMINATE:

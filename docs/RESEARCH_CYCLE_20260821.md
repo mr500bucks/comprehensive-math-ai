@@ -100,3 +100,17 @@ Do not fine-tune. First complete human mathematical review of the pilot, then
 compare a stronger base model through the same provider-neutral evaluation
 interface. The 1.5B Q4 model is useful for infrastructure and fail-closed safety
 testing but is not a viable mathematical diagnosis or hint-generation baseline.
+
+## Follow-up reconciliation — 2026-08-25
+
+The independent mathematical review is now reconciled into
+`evaluation/benchmarks/diagnosis_pilot_v1_reviewed.jsonl`; the provisional file
+and historical 1.5B results remain unchanged. Diagnosis schema `1.1` separates
+valid inefficiency from mathematical error and records downstream dependencies.
+Prompt `diagnosis_v2` exists for future schema-compatible comparisons; no
+further 1.5B prompt experiment was run.
+
+The next capacity test is the reviewed diagnosis-only reference ablation with a
+stronger base model. Full tutoring is gated on usable diagnosis, and
+fine-tuning remains out of scope until a capable base model exposes stable,
+task-level failure classes.

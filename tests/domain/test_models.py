@@ -337,6 +337,85 @@ def test_correct_but_inefficient_diagnosis_cannot_hide_invalid_reasoning() -> No
         )
 
 
+def test_schema_1_1_represents_valid_inefficiency_without_a_fake_issue() -> None:
+    assessment = StepAssessment(
+        step_id="step.list",
+        status=StepStatus.VALID_BUT_INEFFICIENT,
+        efficiency_note="Correct, but Euclid's algorithm is substantially more direct.",
+        confidence=0.95,
+    )
+    diagnosis = DiagnosisV1(
+        schema_version="1.1",
+        attempt_id="attempt.gcd",
+        overall_status=OverallStatus.CORRECT_BUT_INEFFICIENT,
+        step_assessments=(assessment,),
+        reusable_prefix_end_step_id="step.list",
+        earlier_reasoning_usable=True,
+        confidence=0.95,
+    )
+
+    assert diagnosis.first_issue is None
+    assert not assessment.issue_codes
+    assert "efficiency_note" in assessment.model_dump(mode="json")
+
+    with pytest.raises(ValidationError, match="efficiency note"):
+        StepAssessment(
+            step_id="step.list",
+            status=StepStatus.VALID_BUT_INEFFICIENT,
+            confidence=0.95,
+        )
+
+
+def test_dependent_step_names_an_earlier_root_error_and_cannot_be_first_issue() -> None:
+    root = StepAssessment(
+        step_id="step.discriminant",
+        status=StepStatus.INVALID,
+        issue_codes=(IssueCode.COMPUTATION_ARITHMETIC,),
+        explanation="The discriminant arithmetic is wrong.",
+        confidence=0.95,
+    )
+    dependent = StepAssessment(
+        step_id="step.formula",
+        status=StepStatus.DEPENDENT_ON_PREVIOUS_ERROR,
+        explanation="The substitution is coherent only with the wrong discriminant.",
+        depends_on_step_ids=("step.discriminant",),
+        confidence=0.95,
+    )
+    diagnosis = DiagnosisV1(
+        schema_version="1.1",
+        attempt_id="attempt.quadratic",
+        overall_status=OverallStatus.INCORRECT,
+        step_assessments=(root, dependent),
+        first_issue=Issue(
+            step_id="step.discriminant",
+            code=IssueCode.COMPUTATION_ARITHMETIC,
+            explanation="The discriminant arithmetic is wrong.",
+            confidence=0.95,
+        ),
+        earlier_reasoning_usable=False,
+        confidence=0.95,
+    )
+
+    assert diagnosis.first_issue is not None
+    assert diagnosis.first_issue.step_id == "step.discriminant"
+
+    with pytest.raises(ValidationError, match="earlier assessed"):
+        DiagnosisV1(
+            schema_version="1.1",
+            attempt_id="attempt.quadratic",
+            overall_status=OverallStatus.INCORRECT,
+            step_assessments=(dependent, root),
+            first_issue=Issue(
+                step_id="step.discriminant",
+                code=IssueCode.COMPUTATION_ARITHMETIC,
+                explanation="The discriminant arithmetic is wrong.",
+                confidence=0.95,
+            ),
+            earlier_reasoning_usable=False,
+            confidence=0.95,
+        )
+
+
 def test_incorrect_diagnosis_requires_a_localized_issue() -> None:
     with pytest.raises(ValidationError, match="localize a first issue"):
         DiagnosisV1(

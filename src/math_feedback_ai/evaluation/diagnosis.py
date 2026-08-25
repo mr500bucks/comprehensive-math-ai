@@ -18,14 +18,18 @@ from math_feedback_ai.diagnosis.service import DiagnosisAttemptTrace, DiagnosisS
 from math_feedback_ai.domain.models import (
     DiagnosisV1,
     Problem,
+    StepAssessment,
     StudentAttempt,
     TutorDecision,
     TutoringExampleV1,
 )
-from math_feedback_ai.domain.taxonomy import IssueCode, OverallStatus
+from math_feedback_ai.domain.taxonomy import IssueCode, OverallStatus, StepStatus
 
 if TYPE_CHECKING:
-    from math_feedback_ai.evaluation.pilot import DiagnosisPilotCaseV1
+    from math_feedback_ai.evaluation.pilot import (
+        DiagnosisPilotCaseV1,
+        DiagnosisPilotReviewedCaseV1,
+    )
 
 
 class ReferenceMode(StrEnum):
@@ -187,6 +191,28 @@ def pilot_evaluation_cases(
             expected_decision=case.proposed_decision,
             category=case.category,
             human_review_status=case.human_review_status.value,
+            mathematical_domains=case.mathematical_domains,
+            characteristics=case.characteristics,
+            ambiguity_notes=case.ambiguity_notes,
+        )
+        for case in cases
+    )
+
+
+def reviewed_pilot_evaluation_cases(
+    cases: Sequence[DiagnosisPilotReviewedCaseV1],
+) -> tuple[DiagnosisEvaluationCase, ...]:
+    """Adapt the separately versioned human-reviewed synthetic pilot."""
+
+    return tuple(
+        DiagnosisEvaluationCase(
+            case_id=case.case_id,
+            problem=case.problem,
+            student_attempt=case.student_attempt,
+            expected_diagnosis=case.reviewed_diagnosis,
+            expected_decision=case.reviewed_decision,
+            category=case.category,
+            human_review_status=case.human_review_status,
             mathematical_domains=case.mathematical_domains,
             characteristics=case.characteristics,
             ambiguity_notes=case.ambiguity_notes,
@@ -396,6 +422,26 @@ def _build_report(
     incomplete_indices = [
         index for index, status in enumerate(gold_statuses) if status is OverallStatus.INCOMPLETE
     ]
+    inefficient_step_pairs = [
+        (item, assessment.step_id)
+        for item in predictions
+        for assessment in item.expected.step_assessments
+        if assessment.status is StepStatus.VALID_BUT_INEFFICIENT
+    ]
+    inefficient_case_indices = [
+        index
+        for index, item in enumerate(predictions)
+        if any(
+            assessment.status is StepStatus.VALID_BUT_INEFFICIENT
+            for assessment in item.expected.step_assessments
+        )
+    ]
+    dependent_step_pairs = [
+        (item, assessment.step_id)
+        for item in predictions
+        for assessment in item.expected.step_assessments
+        if assessment.status is StepStatus.DEPENDENT_ON_PREVIOUS_ERROR
+    ]
 
     metrics = {
         "overall_status_accuracy": _accuracy(gold_statuses, predicted_statuses),
@@ -413,6 +459,34 @@ def _build_report(
         "valid_alternative_false_rejection_rate": _indexed_rate(
             alternative_indices,
             lambda index: predicted_statuses[index] in rejection_statuses,
+        ),
+        "valid_but_inefficient_step_accuracy": _rate(
+            [
+                _assessment_for_step(item.predicted, step_id).status
+                is StepStatus.VALID_BUT_INEFFICIENT
+                for item, step_id in inefficient_step_pairs
+            ]
+        ),
+        "valid_inefficiency_as_error_rate": _indexed_rate(
+            inefficient_case_indices,
+            lambda index: _inefficiency_was_made_an_error(predictions[index]),
+        ),
+        "dependent_step_accuracy": _rate(
+            [
+                _assessment_for_step(item.predicted, step_id).status
+                is StepStatus.DEPENDENT_ON_PREVIOUS_ERROR
+                for item, step_id in dependent_step_pairs
+            ]
+        ),
+        "dependent_as_independent_error_rate": _rate(
+            [
+                (
+                    (assessment := _assessment_for_step(item.predicted, step_id)).status
+                    in {StepStatus.INVALID, StepStatus.UNSUPPORTED}
+                    or bool(assessment.issue_codes)
+                )
+                for item, step_id in dependent_step_pairs
+            ]
         ),
         "first_issue_exact_accuracy": _indexed_rate(
             localization_indices,
@@ -489,6 +563,30 @@ def _first_issue_position(case: DiagnosisEvaluationCase, diagnosis: DiagnosisV1)
         return None
     positions = {step.step_id: step.position for step in case.student_attempt.steps}
     return positions.get(diagnosis.first_issue.step_id)
+
+
+def _assessment_for_step(diagnosis: DiagnosisV1, step_id: str) -> StepAssessment:
+    return next(item for item in diagnosis.step_assessments if item.step_id == step_id)
+
+
+def _inefficiency_was_made_an_error(prediction: DiagnosisCasePrediction) -> bool:
+    if prediction.predicted.overall_status is OverallStatus.INCORRECT:
+        return True
+    inefficient_ids = {
+        item.step_id
+        for item in prediction.expected.step_assessments
+        if item.status is StepStatus.VALID_BUT_INEFFICIENT
+    }
+    if (
+        prediction.predicted.first_issue is not None
+        and prediction.predicted.first_issue.step_id in inefficient_ids
+    ):
+        return True
+    return any(
+        item.step_id in inefficient_ids
+        and (item.status in {StepStatus.INVALID, StepStatus.UNSUPPORTED} or item.issue_codes)
+        for item in prediction.predicted.step_assessments
+    )
 
 
 def _category_from_notes(notes: str | None) -> str:

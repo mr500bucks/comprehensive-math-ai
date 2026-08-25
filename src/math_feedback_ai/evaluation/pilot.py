@@ -51,6 +51,7 @@ class HumanReviewStatus(StrEnum):
     MODIFIED = "modified"
     REJECTED = "rejected"
     AMBIGUOUS = "ambiguous"
+    REVIEWED = "reviewed"
 
 
 class PilotProvenance(BaseModel):
@@ -117,6 +118,82 @@ class DiagnosisPilotCaseV1(BaseModel):
         return self
 
 
+class ReviewedPilotProvenance(BaseModel):
+    """Traceable review provenance without claiming ecological validity."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    source: NonBlank
+    original_provisional_version: Literal["diagnosis_pilot_v1"] = "diagnosis_pilot_v1"
+    original_provisional_sha256: Literal[
+        "42ff58f9f5694c36385aa395ed44fd2ee711c421c83cff73c8327c6b3d6c77d5"
+    ] = "42ff58f9f5694c36385aa395ed44fd2ee711c421c83cff73c8327c6b3d6c77d5"
+    review_basis: Literal["independent_human_mathematical_adjudication"] = (
+        "independent_human_mathematical_adjudication"
+    )
+    synthetic: Literal[True] = True
+    license: NonBlank = "CC0-1.0"
+    research_use: Literal["human_reviewed_synthetic_benchmark"] = (
+        "human_reviewed_synthetic_benchmark"
+    )
+    notes: NonBlank
+
+
+class DiagnosisPilotReviewedCaseV1(BaseModel):
+    """One reconciled human-reviewed annotation derived from the provisional pilot."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["diagnosis_pilot.reviewed.v1"] = "diagnosis_pilot.reviewed.v1"
+    benchmark_version: Literal["diagnosis_pilot_v1_reviewed"] = "diagnosis_pilot_v1_reviewed"
+    case_id: PilotId
+    category: PilotId
+    mathematical_domains: Annotated[tuple[PilotId, ...], Field(min_length=1)]
+    characteristics: Annotated[tuple[PilotId, ...], Field(min_length=1)]
+    provenance: ReviewedPilotProvenance
+    human_review_status: Literal["reviewed"] = "reviewed"
+    review_disposition: Literal["approved", "modified"]
+    problem: Problem
+    student_attempt: StudentAttempt
+    reviewed_diagnosis: DiagnosisV1
+    reviewed_decision: TutorDecision
+    annotation_explanation: NonBlank
+    ambiguity_notes: NonBlank | None = None
+
+    @field_validator("mathematical_domains", "characteristics")
+    @classmethod
+    def _metadata_values_are_unique(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        if len(value) != len(set(value)):
+            raise ValueError("reviewed pilot metadata values must be unique")
+        return value
+
+    @model_validator(mode="after")
+    def _references_are_consistent(self) -> Self:
+        if self.student_attempt.problem_id != self.problem.problem_id:
+            raise ValueError("student attempt must reference the reviewed problem")
+        if self.reviewed_diagnosis.schema_version != "1.1":
+            raise ValueError("reviewed diagnosis must use corrected schema 1.1")
+        if self.reviewed_diagnosis.attempt_id != self.student_attempt.attempt_id:
+            raise ValueError("reviewed diagnosis must reference the reviewed attempt")
+        step_ids = tuple(step.step_id for step in self.student_attempt.steps)
+        assessment_ids = tuple(
+            assessment.step_id for assessment in self.reviewed_diagnosis.step_assessments
+        )
+        if assessment_ids != step_ids:
+            raise ValueError("reviewed assessments must cover every parsed step in source order")
+        target = self.reviewed_decision.target_step_id
+        if target is not None and target not in set(step_ids):
+            raise ValueError("reviewed decision targets an unknown step")
+        if self.ambiguity_notes is not None and "ambiguous" not in self.characteristics:
+            raise ValueError("ambiguity notes require the ambiguous characteristic")
+        if "ambiguous" in self.characteristics and self.ambiguity_notes is None:
+            raise ValueError("ambiguous cases require adjudication notes")
+        return self
+
+
+type DiagnosisPilotCase = DiagnosisPilotCaseV1 | DiagnosisPilotReviewedCaseV1
+
+
 class PilotValidationIssue(BaseModel):
     """One deterministic structural finding."""
 
@@ -159,7 +236,7 @@ def _near_duplicate(left: str, right: str, *, threshold: float) -> bool:
     return SequenceMatcher(None, normalized_left, normalized_right).ratio() >= threshold
 
 
-def _reference_leaks(case: DiagnosisPilotCaseV1) -> bool:
+def _reference_leaks(case: DiagnosisPilotCase) -> bool:
     student = _normalized(case.student_attempt.raw_text)
     student_tokens = student.split()
     for reference in case.problem.reference_solutions:
@@ -184,7 +261,7 @@ def _reference_leaks(case: DiagnosisPilotCaseV1) -> bool:
 
 
 def validate_pilot_cases(
-    cases: Sequence[DiagnosisPilotCaseV1],
+    cases: Sequence[DiagnosisPilotCase],
     *,
     comparison_examples: Iterable[TutoringExampleV1] = (),
 ) -> PilotValidationReport:
@@ -259,10 +336,13 @@ def validate_pilot_cases(
 
 
 __all__ = [
+    "DiagnosisPilotCase",
     "DiagnosisPilotCaseV1",
+    "DiagnosisPilotReviewedCaseV1",
     "HumanReviewStatus",
     "PilotProvenance",
     "PilotValidationIssue",
     "PilotValidationReport",
+    "ReviewedPilotProvenance",
     "validate_pilot_cases",
 ]

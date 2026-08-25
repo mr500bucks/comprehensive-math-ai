@@ -12,9 +12,13 @@ from math_feedback_ai.evaluation.diagnosis import (
     ReferenceMode,
     development_evaluation_cases,
     diagnosis_case_set_sha256,
+    reviewed_pilot_evaluation_cases,
     run_diagnosis_experiment,
     write_diagnosis_artifacts,
     write_diagnosis_report,
+)
+from math_feedback_ai.evaluation.reviewed_diagnosis_pilot import (
+    build_reviewed_diagnosis_pilot_cases,
 )
 from math_feedback_ai.model.client import ModelOutputError
 from math_feedback_ai.model.fake import FakeModelClient
@@ -77,6 +81,30 @@ def test_safe_abstention_report_exposes_failures_without_hiding_cases() -> None:
         prediction.predicted.overall_status is OverallStatus.INDETERMINATE
         for prediction in report.predictions
     )
+
+
+def test_reviewed_gold_replay_scores_inefficiency_and_dependency_semantics() -> None:
+    reviewed = build_reviewed_diagnosis_pilot_cases()
+    cases = reviewed_pilot_evaluation_cases(reviewed)
+    report = run_diagnosis_experiment(
+        benchmark_name="diagnosis_pilot_v1_reviewed",
+        annotation_status="reviewed",
+        cases=cases,
+        service=DiagnosisService(
+            FakeModelClient(
+                structured_responses=[
+                    case.reviewed_diagnosis.model_dump(mode="json") for case in reviewed
+                ]
+            ),
+            DiagnosisServiceConfig(max_attempts=1, minimum_confidence=0.0),
+        ),
+        reference_mode=ReferenceMode.WITH_REFERENCES,
+    )
+
+    assert report.metrics["valid_but_inefficient_step_accuracy"].value == 1.0
+    assert report.metrics["valid_inefficiency_as_error_rate"].value == 0.0
+    assert report.metrics["dependent_step_accuracy"].value == 1.0
+    assert report.metrics["dependent_as_independent_error_rate"].value == 0.0
 
 
 def test_report_writer_preserves_every_prediction(tmp_path: Path) -> None:

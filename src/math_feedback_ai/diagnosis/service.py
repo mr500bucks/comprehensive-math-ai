@@ -411,6 +411,14 @@ def _response_schema_for_attempt(
         definition_properties = definition["properties"]
         assert isinstance(definition_properties, dict)
         definition_properties["step_id"] = identifier_schema
+    assessment_properties = step_assessment["properties"]
+    assert isinstance(assessment_properties, dict)
+    dependency_ids = assessment_properties["depends_on_step_ids"]
+    assert isinstance(dependency_ids, dict)
+    dependency_items = dependency_ids["items"]
+    assert isinstance(dependency_items, dict)
+    dependency_items.clear()
+    dependency_items.update(identifier_schema)
     completion_properties = completion_gap["properties"]
     assert isinstance(completion_properties, dict)
     completion_properties["after_step_id"] = nullable_identifier_schema
@@ -418,7 +426,7 @@ def _response_schema_for_attempt(
     # Keep Pydantic's optional/defaulted fields optional. Requiring every field
     # made llama.cpp's generated grammar substantially slower and caused the
     # small CPU baseline to exhaust its output cap before emitting content.
-    properties["schema_version"] = {"const": "1.0", "type": "string"}
+    properties["schema_version"] = {"const": "1.1", "type": "string"}
     return schema
 
 
@@ -454,6 +462,8 @@ def _validate_attempt_references(
         referenced_step_ids.add(diagnosis.completion_gap.after_step_id)
     if diagnosis.reusable_prefix_end_step_id is not None:
         referenced_step_ids.add(diagnosis.reusable_prefix_end_step_id)
+    for assessment in diagnosis.step_assessments:
+        referenced_step_ids.update(assessment.depends_on_step_ids)
 
     unknown_steps = referenced_step_ids.difference(known_steps)
     if unknown_steps:
@@ -473,10 +483,11 @@ def _validate_attempt_references(
         for assessment in diagnosis.step_assessments
         if assessment.step_id == diagnosis.first_issue.step_id
     )
-    if (
-        diagnosis.overall_status is OverallStatus.INCORRECT
-        and first_issue_assessment.status is StepStatus.VALID
-    ):
+    if diagnosis.overall_status is OverallStatus.INCORRECT and first_issue_assessment.status in {
+        StepStatus.VALID,
+        StepStatus.VALID_BUT_INEFFICIENT,
+        StepStatus.DEPENDENT_ON_PREVIOUS_ERROR,
+    }:
         raise DiagnosisOutputValidationError(
             "an incorrect diagnosis cannot use a valid step as its first issue"
         )

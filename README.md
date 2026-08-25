@@ -145,6 +145,11 @@ The canonical example contract is generated from `TutoringExampleV1` into
 [`schemas/tutoring_example.v1.schema.json`](schemas/tutoring_example.v1.schema.json).
 A minimal valid record is in
 [`data/examples/tutoring_example.v1.json`](data/examples/tutoring_example.v1.json).
+Diagnosis schema `1.1` adds two causal step states while continuing to load
+historical `1.0` fixtures: `valid_but_inefficient` uses an `efficiency_note`
+without creating `first_issue`, and `dependent_on_previous_error` records its
+causal predecessors in `depends_on_step_ids`.
+
 The development benchmark under `evaluation/benchmarks/` contains only
 synthetic, explicitly marked fixtures. Use it to detect code regressions and
 inspect metric behavior—not to estimate accuracy on real students.
@@ -159,9 +164,13 @@ ignored `evaluation/results/` directory:
   --benchmark development --provider openai --reference-mode both
 ```
 
-Use `--benchmark pilot` for the separate 50-case provisional pilot. Pilot
-results always retain the pending-review qualification and are not validated
-research results. Run the script with `--help` for local llama-cpp settings,
+Use `--benchmark pilot` for the immutable 50-case provisional pilot; its labels
+retain the pending-review qualification. Use `--benchmark pilot-reviewed` for
+the separately versioned human-reviewed synthetic benchmark. Human review
+improves label reliability, not ecological validity. Drift-check it with
+`python scripts/build_reviewed_diagnosis_pilot.py --check`.
+
+Run the experiment script with `--help` for local llama-cpp settings,
 timeouts, confidence thresholds, explicit output paths, and overwrite control.
 The actual 2026-08-21 local baseline, ablation, failure analysis, tutoring run,
 and resulting research decision are summarized in

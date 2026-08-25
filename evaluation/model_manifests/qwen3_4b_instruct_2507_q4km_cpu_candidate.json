@@ -1,0 +1,23 @@
+{
+  "artifact_status": "candidate_not_downloaded",
+  "chat_format": "chatml",
+  "expected_sha256": "2fde00ce69dd4899c70d020845e2638353015bba0fdf161b3eb965f2bca4464e",
+  "expected_size_bytes": 2497280736,
+  "inference": {
+    "max_output_tokens": 2048,
+    "n_ctx": 8192,
+    "n_gpu_layers": 0,
+    "n_threads": 6,
+    "n_threads_batch": 12,
+    "seed": 1337,
+    "temperature": 0.0
+  },
+  "model_filename": "Qwen_Qwen3-4B-Instruct-2507-Q4_K_M.gguf",
+  "model_id": "Qwen/Qwen3-4B-Instruct-2507",
+  "model_repository": "bartowski/Qwen_Qwen3-4B-Instruct-2507-GGUF",
+  "model_revision": "ae44f08e1392f39c0e474af10c3ff8355c8b6688",
+  "provider": "llama_cpp",
+  "quantization": "Q4_K_M",
+  "selection_note": "Best first stronger-model candidate for the recorded 11.75 GiB CPU-only host; non-thinking instruction model with a 2.50 GB GGUF. Only 1.11 GiB RAM was free at the 2026-08-25 preflight, so reclaim at least 6 GiB before download or inference.",
+  "source": "Hugging Face model and GGUF repository metadata inspected without downloading on 2026-08-25"
+}

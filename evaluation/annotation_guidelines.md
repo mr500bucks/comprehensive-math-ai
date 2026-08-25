@@ -19,6 +19,21 @@ research claim.
 5. Reconcile reviewed decisions into a separately versioned artifact. Do not
    silently edit the generated pilot JSONL or call pending labels ground truth.
 
+The reconciled artifact is `diagnosis_pilot_v1_reviewed.jsonl`. It records
+completed human mathematical review while retaining synthetic provenance.
+
+## Valid inefficiency and downstream dependency
+
+A valid but inefficient method is not a mathematical error. Use
+`valid_but_inefficient`, include an `efficiency_note`, leave `first_issue` null,
+and allow the full valid solution to remain reusable.
+
+When a later step is locally coherent only because it uses an earlier wrong
+result, use `dependent_on_previous_error` and name the causal predecessor in
+`depends_on_step_ids`. Reserve `invalid` or `unsupported` for an independent
+local defect. A later independent defect can also record that it depends on an
+earlier root error.
+
 ## Core definitions
 
 ### First meaningful error
@@ -124,4 +139,3 @@ Pending proposals may be used only for developmental debugging, with this exact
 qualification in any report:
 
 > These results use provisional Codex-generated annotations and are not validated research results.
-

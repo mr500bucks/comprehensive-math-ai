@@ -84,6 +84,40 @@ def test_safe_pilot_run_preserves_pending_research_qualification(
     assert len(predictions) == 50
 
 
+def test_safe_reviewed_pilot_run_records_comparison_dimensions(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert (
+        main(
+            [
+                "--benchmark",
+                "pilot-reviewed",
+                "--provider",
+                "none",
+                "--reference-mode",
+                "without",
+                "--diagnosis-attempts",
+                "1",
+                "--output-dir",
+                str(tmp_path),
+            ]
+        )
+        == 0
+    )
+    manifest = json.loads(capsys.readouterr().out)
+    summary = json.loads(Path(manifest["outputs"][0]["summary"]).read_text(encoding="utf-8"))
+    metadata = summary["run_metadata"]
+
+    assert manifest["benchmark"] == "diagnosis_pilot_v1_reviewed"
+    assert manifest["annotation_status"] == "reviewed"
+    assert "research_qualification" not in manifest
+    assert metadata["benchmark_version"] == "diagnosis_pilot_v1_reviewed"
+    assert metadata["diagnosis_schema_version"] == "1.1"
+    assert metadata["prompt_version"] == "diagnosis_v2"
+    assert metadata["reference_mode"] == "without_references"
+
+
 def test_provider_specific_options_fail_before_any_experiment(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],

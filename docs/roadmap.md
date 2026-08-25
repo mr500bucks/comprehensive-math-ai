@@ -33,3 +33,15 @@ model is too weak to separate prompt, schema, and mathematical-capability
 effects. Multiple candidates/ranking, curriculum alignment, a web interface,
 authentication, and production analytics remain deferred until core diagnosis
 is reliable.
+
+## Reviewed-benchmark milestone (2026-08-25)
+
+The 50-case review is reconciled in a separately versioned artifact; the
+provisional pilot remains byte-for-byte unchanged. The contract now represents
+valid inefficiency without a fake error and captures downstream dependencies
+for future counterfactual repair analysis.
+
+Next, run the reviewed diagnosis-only reference ablation with the pinned
+Qwen3-4B-Instruct-2507 Q4_K_M candidate. Run full tutoring only if diagnosis
+produces enough usable outputs and meaningful localization. Do not fine-tune
+until the gate in `docs/STRONGER_MODEL_BENCHMARK.md` is met.
