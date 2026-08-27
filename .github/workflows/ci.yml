@@ -22,13 +22,18 @@ jobs:
           python -m pip install -r requirements.lock
           python -m pip install --no-deps -e .
       - name: Lint
-        run: ruff check .
+        run: python -m ruff check .
       - name: Format check
-        run: ruff format --check .
+        run: python -m ruff format --check .
       - name: Type check
-        run: mypy
+        run: python -m mypy
       - name: Test
-        run: pytest
+        run: python -m pytest
+      - name: Verify committed generated artifacts
+        run: |
+          python scripts/build_development_benchmark.py --check
+          python scripts/build_diagnosis_pilot.py --check
+          python scripts/build_reviewed_diagnosis_pilot.py --check
       - name: Build and smoke-test wheel
         run: |
           python -m pip wheel --no-deps --wheel-dir "$RUNNER_TEMP/wheelhouse" .
